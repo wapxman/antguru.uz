@@ -23,15 +23,15 @@
 - ⏳ Postgres в облаке (Neon) — требует аккаунта пользователя
 - ⏳ Redis (Upstash) — требует аккаунта
 - ⬜ Применение Prisma-миграций (после Postgres)
-- 🚧 Сидер категорий (ru + uz)
+- ✅ Сидер категорий (ru + uz, 12 рубрик × 3–8 подкатегорий)
 - ⏳ Деплой `apps/api` (Railway) — требует аккаунта
-- 🚧 ESLint + Prettier пресеты в `@antguru/config`
-- 🚧 `.env.example` файлы
+- ✅ ESLint + Prettier пресеты в `@antguru/config` (base/next/nest)
+- ✅ `.env.example` файлы (api, web, admin)
 
 ## Фаза 2 — аутентификация и пользователи
 
-- 🚧 API: модуль `common` (guards, decorators, filters)
-- ⬜ API: модуль `auth` (SMS OTP через Eskiz, JWT, refresh token)
+- ✅ API: модуль `common` (PrismaService, RedisService, guards, decorators, ZodValidationPipe, HttpExceptionFilter, BigIntInterceptor)
+- ✅ API: модуль `auth` (SMS OTP через Eskiz с dev-fallback, JWT access+refresh, cooldown/блокировка, глобальные guards)
 - ⬜ API: модуль `users` (профиль CRUD, аватар)
 - ⬜ API: модуль `specialists` (активация профиля, верификация)
 - ⬜ Web: `/login`, `/register` страницы + middleware
