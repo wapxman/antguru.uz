@@ -10,15 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@antguru/sdk": "workspace:*",
-    "@antguru/types": "workspace:*",
-    "@antguru/ui": "workspace:*",
+    "@antguru/sdk": "*",
+    "@antguru/types": "*",
+    "@antguru/ui": "*",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
   "devDependencies": {
-    "@antguru/config": "workspace:*",
+    "@antguru/config": "*",
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

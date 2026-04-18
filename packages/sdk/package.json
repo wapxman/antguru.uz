@@ -8,10 +8,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@antguru/types": "workspace:*"
+    "@antguru/types": "*"
   },
   "devDependencies": {
-    "@antguru/config": "workspace:*",
+    "@antguru/config": "*",
     "typescript": "^5.4.0"
   }
 }

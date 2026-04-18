@@ -1,3 +1,5 @@
+# DEPRECATED: файл оставлен для совместимости, если кто-то захочет pnpm локально.
+# На CI/Vercel используем npm workspaces (см. package.json поле workspaces).
 packages:
   - "apps/*"
   - "packages/*"

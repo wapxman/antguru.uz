@@ -11,7 +11,7 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@antguru/config": "workspace:*",
+    "@antguru/config": "*",
     "typescript": "^5.4.0"
   }
 }
