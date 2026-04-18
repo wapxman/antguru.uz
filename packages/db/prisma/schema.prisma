@@ -13,8 +13,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================
@@ -111,10 +112,8 @@ model SpecialistProfile {
   bio          String?
   city         String?
   verification VerificationStatus @default(PENDING)
-  // Кэшированные агрегаты (пересчитываем в сервисе при изменении отзывов).
   rating       Float              @default(0)
   reviewsCount Int                @default(0)
-  // Баланс в тийинах (может быть отрицательным при овердрафте, поэтому BigInt со знаком).
   balanceMinor BigInt             @default(0)
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
@@ -156,7 +155,6 @@ model Category {
   @@map("categories")
 }
 
-// Связующая many-to-many между специалистом и категориями услуг.
 model SpecialistCategory {
   specialistId String
   categoryId   String
@@ -180,7 +178,7 @@ model Order {
   categoryId           String
   title                String
   description          String
-  budgetMinor          BigInt?     // в тийинах; null если договорной
+  budgetMinor          BigInt?
   budgetType           BudgetType  @default(FIXED)
   address              String?
   lat                  Float?
@@ -207,7 +205,7 @@ model Order {
 }
 
 // ============================================================
-// RESPONSE (отклик специалиста на заявку)
+// RESPONSE
 // ============================================================
 
 model Response {
@@ -215,16 +213,16 @@ model Response {
   orderId      String
   specialistId String
   message      String
-  priceMinor   BigInt?        // предложение цены в тийинах
+  priceMinor   BigInt?
   status       ResponseStatus @default(PENDING)
-  feeMinor     BigInt         @default(0) // сколько списали с баланса специалиста
+  feeMinor     BigInt         @default(0)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
   order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   specialist SpecialistProfile @relation(fields: [specialistId], references: [id], onDelete: Cascade)
 
-  @@unique([orderId, specialistId]) // один отклик от одного специалиста на заказ
+  @@unique([orderId, specialistId])
   @@index([orderId])
   @@index([specialistId])
   @@index([status])
@@ -232,16 +230,15 @@ model Response {
 }
 
 // ============================================================
-// REVIEW (двунаправленные отзывы)
-// И клиент, и специалист могут оставить по одному отзыву по заказу.
+// REVIEW
 // ============================================================
 
 model Review {
   id        String   @id @default(cuid())
   orderId   String
-  authorId  String   // кто оставил
-  targetId  String   // кому оставили
-  rating    Int      // 1..5
+  authorId  String
+  targetId  String
+  rating    Int
   text      String?
   createdAt DateTime @default(now())
 
@@ -249,14 +246,14 @@ model Review {
   author User  @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   target User  @relation("ReviewTarget", fields: [targetId], references: [id], onDelete: Cascade)
 
-  @@unique([orderId, authorId]) // один отзыв от одного автора на заказ
+  @@unique([orderId, authorId])
   @@index([targetId])
   @@index([orderId])
   @@map("reviews")
 }
 
 // ============================================================
-// CHAT (привязан к заказу)
+// CHAT
 // ============================================================
 
 model ChatThread {
@@ -296,7 +293,7 @@ model Payment {
   userId       String
   orderId      String?
   type         PaymentType
-  amountMinor  BigInt          // всегда положительное; направление задаёт type
+  amountMinor  BigInt
   currency     String          @default("UZS")
   status       PaymentStatus   @default(PENDING)
   provider     PaymentProvider
