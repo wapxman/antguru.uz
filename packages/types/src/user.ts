@@ -8,6 +8,8 @@ export const UserSchema = z.object({
   id: z.string(),
   phone: PhoneSchema,
   name: z.string().nullable(),
+  email: z.string().email().nullable(),
+  avatarUrl: z.string().url().nullable(),
   roles: z.array(UserRoleSchema),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

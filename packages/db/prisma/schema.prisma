@@ -1,5 +1,12 @@
 // Prisma schema for antguru.uz
 // Документация: https://pris.ly/d/prisma-schema
+//
+// Соглашения:
+//  - Идентификаторы — cuid().
+//  - Таблицы в snake_case через @@map.
+//  - Деньги в тийинах (BigInt): 1 UZS = 100 тийин.
+//  - Пользователь может быть одновременно и клиентом, и специалистом:
+//    User.roles[] — набор ролей; SpecialistProfile — опциональный 1-1 профиль.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,22 +17,300 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Роли пользователей. Пользователь может быть и клиентом, и специалистом одновременно.
+// ============================================================
+// ENUMS
+// ============================================================
+
 enum UserRole {
   CLIENT
   SPECIALIST
   ADMIN
 }
 
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OrderStatus {
+  DRAFT
+  PUBLISHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BudgetType {
+  FIXED       // фиксированный бюджет
+  NEGOTIABLE  // договорной (торг)
+}
+
+enum ResponseStatus {
+  PENDING     // отклик отправлен, клиент не ответил
+  ACCEPTED    // клиент выбрал специалиста
+  DECLINED    // клиент отклонил
+  WITHDRAWN   // специалист отозвал
+}
+
+enum PaymentType {
+  TOPUP         // пополнение баланса специалиста
+  WITHDRAWAL    // вывод средств
+  RESPONSE_FEE  // комиссия за отклик (lead fee)
+  COMMISSION    // комиссия платформы с заказа
+  REFUND        // возврат
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  PAYME
+  CLICK
+  INTERNAL  // внутренние операции (списание с баланса)
+}
+
+// ============================================================
+// USER
+// ============================================================
+
 model User {
-  id        String    @id @default(cuid())
-  phone     String    @unique
+  id        String     @id @default(cuid())
+  phone     String     @unique
   name      String?
-  roles     UserRole[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  email     String?    @unique
+  avatarUrl String?
+  roles     UserRole[] @default([CLIENT])
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Опциональный профиль специалиста (1-1). Создаётся при активации режима специалиста.
+  specialistProfile SpecialistProfile?
+
+  // Связи как клиента и участника переписки
+  orders          Order[]       @relation("OrderClient")
+  reviewsAuthored Review[]      @relation("ReviewAuthor")
+  reviewsReceived Review[]      @relation("ReviewTarget")
+  chatMessages    ChatMessage[]
+  payments        Payment[]
 
   @@map("users")
 }
 
-// TODO: в следующих этапах добавим: Specialist, Category, Order, Response, Review, ChatMessage, Payment, и т.д.
+// ============================================================
+// SPECIALIST PROFILE
+// ============================================================
+
+model SpecialistProfile {
+  id           String             @id @default(cuid())
+  userId       String             @unique
+  bio          String?
+  city         String?
+  verification VerificationStatus @default(PENDING)
+  // Кэшированные агрегаты (пересчитываем в сервисе при изменении отзывов).
+  rating       Float              @default(0)
+  reviewsCount Int                @default(0)
+  // Баланс в тийинах (может быть отрицательным при овердрафте, поэтому BigInt со знаком).
+  balanceMinor BigInt             @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories     SpecialistCategory[]
+  responses      Response[]
+  ordersSelected Order[]              @relation("OrderSpecialist")
+
+  @@index([city])
+  @@index([verification])
+  @@map("specialist_profiles")
+}
+
+// ============================================================
+// CATEGORY (дерево)
+// ============================================================
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  nameRu      String
+  nameUz      String
+  description String?
+  icon        String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent      Category?            @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[]           @relation("CategoryTree")
+  specialists SpecialistCategory[]
+  orders      Order[]
+
+  @@index([parentId])
+  @@index([isActive])
+  @@map("categories")
+}
+
+// Связующая many-to-many между специалистом и категориями услуг.
+model SpecialistCategory {
+  specialistId String
+  categoryId   String
+  createdAt    DateTime @default(now())
+
+  specialist SpecialistProfile @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  category   Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([specialistId, categoryId])
+  @@index([categoryId])
+  @@map("specialist_categories")
+}
+
+// ============================================================
+// ORDER
+// ============================================================
+
+model Order {
+  id                   String      @id @default(cuid())
+  clientId             String
+  categoryId           String
+  title                String
+  description          String
+  budgetMinor          BigInt?     // в тийинах; null если договорной
+  budgetType           BudgetType  @default(FIXED)
+  address              String?
+  lat                  Float?
+  lng                  Float?
+  scheduledAt          DateTime?
+  status               OrderStatus @default(DRAFT)
+  selectedSpecialistId String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  client             User               @relation("OrderClient", fields: [clientId], references: [id], onDelete: Restrict)
+  category           Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  selectedSpecialist SpecialistProfile? @relation("OrderSpecialist", fields: [selectedSpecialistId], references: [id], onDelete: SetNull)
+  responses          Response[]
+  reviews            Review[]
+  chatThread         ChatThread?
+  payments           Payment[]
+
+  @@index([clientId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+// ============================================================
+// RESPONSE (отклик специалиста на заявку)
+// ============================================================
+
+model Response {
+  id           String         @id @default(cuid())
+  orderId      String
+  specialistId String
+  message      String
+  priceMinor   BigInt?        // предложение цены в тийинах
+  status       ResponseStatus @default(PENDING)
+  feeMinor     BigInt         @default(0) // сколько списали с баланса специалиста
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  specialist SpecialistProfile @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, specialistId]) // один отклик от одного специалиста на заказ
+  @@index([orderId])
+  @@index([specialistId])
+  @@index([status])
+  @@map("responses")
+}
+
+// ============================================================
+// REVIEW (двунаправленные отзывы)
+// И клиент, и специалист могут оставить по одному отзыву по заказу.
+// ============================================================
+
+model Review {
+  id        String   @id @default(cuid())
+  orderId   String
+  authorId  String   // кто оставил
+  targetId  String   // кому оставили
+  rating    Int      // 1..5
+  text      String?
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author User  @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  target User  @relation("ReviewTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, authorId]) // один отзыв от одного автора на заказ
+  @@index([targetId])
+  @@index([orderId])
+  @@map("reviews")
+}
+
+// ============================================================
+// CHAT (привязан к заказу)
+// ============================================================
+
+model ChatThread {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order    Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id        String    @id @default(cuid())
+  threadId  String
+  senderId  String
+  text      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+// ============================================================
+// PAYMENT
+// ============================================================
+
+model Payment {
+  id           String          @id @default(cuid())
+  userId       String
+  orderId      String?
+  type         PaymentType
+  amountMinor  BigInt          // всегда положительное; направление задаёт type
+  currency     String          @default("UZS")
+  status       PaymentStatus   @default(PENDING)
+  provider     PaymentProvider
+  providerTxId String?
+  description  String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([providerTxId])
+  @@map("payments")
+}
